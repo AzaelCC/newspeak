@@ -1,7 +1,11 @@
 # Python
 __pycache__/
-*.pyc
+*.py[oc]
 .venv/
+build/
+dist/
+wheels/
+*.egg-info
 
 # uv
 uv.lock
