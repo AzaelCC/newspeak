@@ -79,6 +79,8 @@ async def send_and_receive(ws, payload: dict) -> dict:
     return {
         "text": text_msg.get("text", "") if text_msg else "",
         "transcription": text_msg.get("transcription") if text_msg else None,
+        "audio_pipeline": text_msg.get("audio_pipeline") if text_msg else None,
+        "asr_time": text_msg.get("asr_time") if text_msg else None,
         "llm_time": text_msg.get("llm_time", 0) if text_msg else 0,
         "ttft": text_msg.get("ttft"),
         "decode_tokens": text_msg.get("decode_tokens"),
@@ -169,20 +171,24 @@ async def main():
     print("=" * 80)
 
     async with websockets.connect(SERVER_URL) as ws:
-        # Tool calling works
+        # Text-only chat should not require the transcription tool.
         r = await send_and_receive(ws, {"text": "Hello, nice to meet you!"})
-        print(f"  Tool called:        {'PASS' if r['transcription'] else 'FAIL'}")
-        print(f"  Has response:       {'PASS' if r['text'] and len(r['text']) > 0 else 'FAIL'}")
+        print(f"  Text response:      {'PASS' if r['text'] and len(r['text']) > 0 else 'FAIL'}")
+        print(f"  Text no ASR:        {'PASS' if not r['transcription'] else 'FAIL'}")
         print(f"  No raw delimiters:  {'PASS' if '<|\"|>' not in r['text'] else 'FAIL'}")
 
         # Image description works
         r = await send_and_receive(ws, {"image": image})
         has_desc = r["text"] and len(r["text"]) > 10
         print(f"  Image described:    {'PASS' if has_desc else 'FAIL'}")
+        print(f"  Image no ASR:       {'PASS' if not r['transcription'] else 'FAIL'}")
 
-        # Audio works
+        # Audio works; transcription may come from the direct LLM tool or WhisperX.
         r = await send_and_receive(ws, {"audio": audio_2s})
         print(f"  Audio processed:    {'PASS' if r['text'] and len(r['text']) > 0 else 'FAIL'}")
+        print(f"  Audio transcript:   {'PASS' if r['transcription'] else 'FAIL'}")
+        if r.get("audio_pipeline") == "whisperx":
+            print(f"  WhisperX ASR timed: {'PASS' if r['asr_time'] is not None else 'FAIL'}")
 
     print()
     print("Done.")

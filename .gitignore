@@ -8,6 +8,7 @@ wheels/
 *.egg-info
 
 .env
+config.toml
 # Models (too large for git)
 *.onnx
 *.bin

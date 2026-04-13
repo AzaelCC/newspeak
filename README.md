@@ -20,27 +20,31 @@ Google just released a super capable small model that I can run on my M3 Pro in 
 
 ```
 Browser (mic + camera)
-    │
-    │  WebSocket (audio PCM + JPEG frames)
-    ▼
+    |
+    |  WebSocket (audio PCM + JPEG frames)
+    v
 FastAPI server
-    ├── Gemma 4 E2B via LiteRT-LM (GPU)  →  understands speech + vision
-    └── Kokoro TTS (MLX on Mac, ONNX on Linux)  →  speaks back
-    │
-    │  WebSocket (streamed audio chunks)
-    ▼
+    |-- Direct mode: sends audio + image to Gemma via OpenAI-compatible chat
+    |-- WhisperX mode: transcribes audio locally, then sends text + image to Gemma
+    |-- Kokoro TTS (MLX on Mac, ONNX on Linux) -> speaks back
+    |
+    |  WebSocket (streamed audio chunks)
+    v
 Browser (playback + transcript)
 ```
 
 - **Voice Activity Detection** in the browser ([Silero VAD](https://github.com/ricky0123/vad)). Hands-free, no push-to-talk.
 - **Barge-in.** Interrupt the AI mid-sentence by speaking.
 - **Sentence-level TTS streaming.** Audio starts playing before the full response is generated.
+- **Selectable audio pipeline.** Keep direct multimodal audio, or switch to local WhisperX transcription before chat inference.
 
 ## Requirements
 
 - Python 3.12+
-- macOS with Apple Silicon, or Linux with a supported GPU
-- ~3 GB free RAM for the model
+- macOS with Apple Silicon, or Linux/Windows with supported TTS and inference backends
+- A running OpenAI-compatible chat server, configured via `SERVER__LLAMA_SERVER_URL`
+- ~3 GB free RAM for the chat model, plus any WhisperX model memory when enabled
+- The `whisper` extra excludes macOS `mlx-audio` because WhisperX 3.8.5 and `mlx-audio` currently require incompatible `huggingface-hub` versions.
 
 ## Quick start
 
@@ -58,14 +62,37 @@ uv run server.py
 
 Open [http://localhost:8000](http://localhost:8000), grant camera and microphone access, and start talking.
 
-Models are downloaded automatically on first run (~2.6 GB for Gemma 4 E2B, plus TTS models).
+Models are downloaded automatically on first run.
+
+To use the WhisperX pipeline:
+
+```bash
+cd src
+uv sync --extra whisper
+```
+
+Then set `AUDIO__PIPELINE=whisperx` in your `.env` (copy `.env.example` to `.env` to get started) or as an environment variable. Optionally set `WHISPERX__DEVICE` to `cpu`, `cuda`, `gpu`, or `auto` (default).
 
 ## Configuration
 
-| Variable     | Default                        | Description                                    |
-| ------------ | ------------------------------ | ---------------------------------------------- |
-| `MODEL_PATH` | auto-download from HuggingFace | Path to a local `gemma-4-E2B-it.litertlm` file |
-| `PORT`       | `8000`                         | Server port                                    |
+Configuration is set via environment variables or a `.env` file at the repo root. Copy `.env.example` to `.env` and uncomment the lines you want to change. All settings have working defaults; you only need to set what differs.
+
+Nested keys use double-underscore as separator (`SECTION__KEY`). Environment variables take precedence over `.env` values.
+
+| Variable                    | Default                 | Description                             |
+| --------------------------- | ----------------------- | --------------------------------------- |
+| `SERVER__PORT`              | `8000`                  | FastAPI server port                     |
+| `SERVER__LLAMA_SERVER_URL`  | `http://localhost:8080` | OpenAI-compatible llama-server URL      |
+| `SERVER__LLAMA_MODEL`       | `gemma-4-E2B-it`        | Model name or alias for chat calls      |
+| `AUDIO__PIPELINE`           | `direct`                | `direct` or `whisperx`                  |
+| `WHISPERX__MODEL`           | `small`                 | WhisperX ASR model                      |
+| `WHISPERX__DEVICE`          | `auto`                  | `cpu`, `cuda`, `gpu`, or `auto`         |
+| `WHISPERX__COMPUTE_TYPE`    | `auto`                  | `int8`, `float16`, `float32`, or `auto` |
+| `WHISPERX__BATCH_SIZE`      | `8`                     | WhisperX transcription batch size       |
+| `WHISPERX__LANGUAGE`        | empty                   | Empty = auto-detect language            |
+| `WHISPERX__DOWNLOAD_ROOT`   | empty                   | Optional model download/cache directory |
+
+`WHISPERX__DEVICE=cpu` always forces CPU, even when CUDA is installed. `gpu` and `cuda` require CUDA and fail at startup if unavailable. `auto` uses CUDA when available, CPU otherwise.
 
 ## Performance (Apple M3 Pro)
 
@@ -82,14 +109,16 @@ Decode speed: ~83 tokens/sec on GPU (Apple M3 Pro).
 
 ```
 src/
-├── server.py              # FastAPI WebSocket server + Gemma 4 inference
-├── tts.py                 # Platform-aware TTS (MLX on Mac, ONNX on Linux)
-├── index.html             # Frontend UI (VAD, camera, audio playback)
-├── pyproject.toml         # Dependencies
-└── benchmarks/
-    ├── bench.py           # End-to-end WebSocket benchmark
-    └── benchmark_tts.py   # TTS backend comparison
+|-- server.py              # FastAPI WebSocket server + audio pipeline routing
+|-- tts.py                 # Platform-aware TTS (MLX on Mac, ONNX on Linux)
+|-- index.html             # Frontend UI (VAD, camera, audio playback)
+|-- pyproject.toml         # Dependencies
+`-- benchmarks/
+    |-- bench.py           # End-to-end WebSocket benchmark
+    `-- benchmark_tts.py   # TTS backend comparison
 ```
+
+`.env.example` documents all available settings. Local `.env` is ignored by git.
 
 ## Acknowledgments
 
@@ -97,6 +126,7 @@ src/
 - [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) by Google AI Edge
 - [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) TTS by Hexgrad
 - [Silero VAD](https://github.com/snakers4/silero-vad) for browser voice activity detection
+- [WhisperX](https://github.com/m-bain/whisperX) for local ASR when enabled
 
 ## License
 
