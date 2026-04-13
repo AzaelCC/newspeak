@@ -9,28 +9,20 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import litert_lm
+from dotenv import load_dotenv
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
+from openai import AsyncOpenAI
 
 import tts
 
-HF_REPO = "litert-community/gemma-4-E2B-it-litert-lm"
-HF_FILENAME = "gemma-4-E2B-it.litertlm"
+load_dotenv(Path(__file__).parent.parent / ".env")
 
+LLAMA_SERVER_URL = os.environ.get("LLAMA_SERVER_URL", "http://localhost:8080")
+LLAMA_MODEL = os.environ.get("LLAMA_MODEL", "gemma-4-E2B-it")
 
-def resolve_model_path() -> str:
-    path = os.environ.get("MODEL_PATH", "")
-    if path:
-        return path
-    from huggingface_hub import hf_hub_download
-    print(f"Downloading {HF_REPO}/{HF_FILENAME} (first run only)...")
-    return hf_hub_download(repo_id=HF_REPO, filename=HF_FILENAME)
-
-
-MODEL_PATH = resolve_model_path()
 SYSTEM_PROMPT = (
     "You are a friendly, conversational AI assistant. The user is talking to you "
     "through a microphone and showing you their camera. "
@@ -38,24 +30,36 @@ SYSTEM_PROMPT = (
     "First transcribe exactly what the user said, then write your response."
 )
 
+TOOLS = [{
+    "type": "function",
+    "function": {
+        "name": "respond_to_user",
+        "description": "Respond to the user's voice message.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "transcription": {
+                    "type": "string",
+                    "description": "Exact transcription of what the user said.",
+                },
+                "response": {
+                    "type": "string",
+                    "description": "Your conversational response. Keep it to 1-4 short sentences.",
+                },
+            },
+            "required": ["transcription", "response"],
+        },
+    },
+}]
+
 SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+')
 
-engine = None
+llm = AsyncOpenAI(base_url=f"{LLAMA_SERVER_URL}/v1", api_key="not-needed")
 tts_backend = None
 
 
 def load_models():
-    global engine, tts_backend
-    print(f"Loading Gemma 4 E2B from {MODEL_PATH}...")
-    engine = litert_lm.Engine(
-        MODEL_PATH,
-        backend=litert_lm.Backend.GPU,
-        vision_backend=litert_lm.Backend.GPU,
-        audio_backend=litert_lm.Backend.CPU,
-    )
-    engine.__enter__()
-    print("Engine loaded.")
-
+    global tts_backend
     tts_backend = tts.load()
 
 
@@ -83,25 +87,7 @@ async def root():
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
 
-    # Per-connection tool state captured via closure
-    tool_result = {}
-
-    def respond_to_user(transcription: str, response: str) -> str:
-        """Respond to the user's voice message.
-
-        Args:
-            transcription: Exact transcription of what the user said in the audio.
-            response: Your conversational response to the user. Keep it to 1-4 short sentences.
-        """
-        tool_result["transcription"] = transcription
-        tool_result["response"] = response
-        return "OK"
-
-    conversation = engine.create_conversation(
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}],
-        tools=[respond_to_user],
-    )
-    conversation.__enter__()
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     interrupted = asyncio.Event()
     msg_queue = asyncio.Queue()
@@ -132,9 +118,16 @@ async def websocket_endpoint(ws: WebSocket):
 
             content = []
             if msg.get("audio"):
-                content.append({"type": "audio", "blob": msg["audio"]})
+                # Browser already sends base64 WAV — pass directly
+                content.append({
+                    "type": "input_audio",
+                    "input_audio": {"data": msg["audio"], "format": "wav"},
+                })
             if msg.get("image"):
-                content.append({"type": "image", "blob": msg["image"]})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{msg['image']}"},
+                })
 
             if msg.get("audio") and msg.get("image"):
                 content.append({"type": "text", "text": "The user just spoke to you (audio) while showing their camera (image). Respond to what they said, referencing what you see if relevant."})
@@ -147,21 +140,32 @@ async def websocket_endpoint(ws: WebSocket):
 
             # LLM inference
             t0 = time.time()
-            tool_result.clear()
-            response = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: conversation.send_message({"role": "user", "content": content})
+            messages.append({"role": "user", "content": content})
+            completion = await llm.chat.completions.create(
+                model=LLAMA_MODEL,
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="required",
             )
             llm_time = time.time() - t0
 
+            choice = completion.choices[0].message
+            messages.append(choice.model_dump(exclude_unset=True))
+
             # Extract response from tool call or fallback to raw text
-            if tool_result:
-                strip = lambda s: s.replace('<|"|>', "").strip()
-                transcription = strip(tool_result.get("transcription", ""))
-                text_response = strip(tool_result.get("response", ""))
+            if choice.tool_calls:
+                args = json.loads(choice.tool_calls[0].function.arguments)
+                transcription = args.get("transcription", "").strip()
+                text_response = args.get("response", "").strip()
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": choice.tool_calls[0].id,
+                    "content": "OK",
+                })
                 print(f"LLM ({llm_time:.2f}s) [tool] heard: {transcription!r} → {text_response}")
             else:
                 transcription = None
-                text_response = response["content"][0]["text"]
+                text_response = (choice.content or "").strip()
                 print(f"LLM ({llm_time:.2f}s) [no tool]: {text_response}")
 
             if interrupted.is_set():
@@ -225,7 +229,6 @@ async def websocket_endpoint(ws: WebSocket):
         print("Client disconnected")
     finally:
         recv_task.cancel()
-        conversation.__exit__(None, None, None)
 
 
 if __name__ == "__main__":
