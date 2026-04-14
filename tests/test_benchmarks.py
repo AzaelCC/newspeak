@@ -11,10 +11,14 @@ def test_benchmark_print_row_uses_current_metrics(capsys) -> None:
         "Text only",
         {
             "text": "hello",
+            "whisper_time": 0.25,
             "llm_time": 1.0,
             "tts_time": 0.5,
             "total_time": 1.7,
         },
     )
 
-    assert "Text only" in capsys.readouterr().out
+    out = capsys.readouterr().out
+
+    assert "Text only" in out
+    assert "0.25s" in out

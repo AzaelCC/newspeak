@@ -75,6 +75,9 @@ async def send_and_receive(ws, payload: dict) -> dict:
         "text": text_msg.get("text", "") if text_msg else "",
         "transcription": text_msg.get("transcription") if text_msg else None,
         "audio_pipeline": text_msg.get("audio_pipeline") if text_msg else None,
+        "whisper_time": (
+            text_msg.get("whisper_time", text_msg.get("asr_time")) if text_msg else None
+        ),
         "asr_time": text_msg.get("asr_time") if text_msg else None,
         "llm_time": text_msg.get("llm_time", 0) if text_msg else 0,
         "tts_time": tts_time,
@@ -85,14 +88,15 @@ async def send_and_receive(ws, payload: dict) -> dict:
 
 
 def print_header():
-    print(f"{'Test':<22} {'LLM':>6} {'TTS':>6} {'Total':>6}  {'Response'}")
-    print("-" * 80)
+    print(f"{'Test':<22} {'Whisper':>7} {'LLM':>6} {'TTS':>6} {'Total':>6}  {'Response'}")
+    print("-" * 88)
 
 
 def print_row(name: str, r: dict):
     resp = r["text"][:50] + "..." if len(r["text"]) > 50 else r["text"]
     print(
-        f"{name:<22} {r['llm_time']:>5.2f}s {r['tts_time'] or 0:>5.2f}s "
+        f"{name:<22} {r.get('whisper_time') or 0:>6.2f}s "
+        f"{r['llm_time']:>5.2f}s {r['tts_time'] or 0:>5.2f}s "
         f"{r['total_time']:>5.2f}s  {resp}"
     )
 

@@ -38,6 +38,7 @@ class TextEvent(WebSocketEvent):
     type: Literal["text"] = "text"
     text: str
     llm_time: float
+    whisper_time: float | None = None
     audio_pipeline: str | None = None
     asr_time: float | None = None
     transcription: str | None = None

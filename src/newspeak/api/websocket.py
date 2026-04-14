@@ -165,12 +165,14 @@ class WebSocketSession:
         self._cache_turn(turn)
         self._last_turn_id = turn.turn_id
 
+        whisper_time = round(turn.asr_time, 2) if turn.asr_time is not None else None
         await self._send_event(
             TextEvent(
                 text=turn.text_response,
                 llm_time=round(turn.llm_time, 2),
+                whisper_time=whisper_time,
                 audio_pipeline=turn.audio_pipeline,
-                asr_time=round(turn.asr_time, 2) if turn.asr_time is not None else None,
+                asr_time=whisper_time,
                 transcription=turn.transcription,
                 turn_id=turn.turn_id,
             )
