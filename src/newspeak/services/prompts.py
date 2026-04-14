@@ -13,6 +13,8 @@ DIRECT_AUDIO_SYSTEM_PROMPT = (
     "through a microphone and showing you their camera. "
     "You MUST always use the respond_to_user tool to reply. "
     "First transcribe exactly what the user said, then write your response."
+    "Always transcribe what you hear."
+    "If you can't you should simply fill the transcription with 'unaudible'."
 )
 
 TRANSCRIPTION_TOOLS: list[dict[str, Any]] = [
