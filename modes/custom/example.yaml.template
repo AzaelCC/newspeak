@@ -1,0 +1,24 @@
+# Custom practice mode template
+# Copy this file to a new .yaml file in this directory to create your own mode.
+# Required fields: id, name, roleplay_system, coach_system_auto, coach_system_deep
+
+id: my_custom_mode
+name: My Custom Mode
+description: A short description shown in the mode picker.
+
+# Optional: set target_language and coach_language for language practice modes
+# target_language: Spanish
+# coach_language: English
+
+roleplay_system: |
+  You are a [describe the persona / role / scenario].
+  [Add instructions for how the character should behave during the conversation.]
+
+coach_system_auto: |
+  You are a [type of coach].
+  [Instructions for auto coaching: what to look for, how detailed to be, language to write in.]
+  If there is nothing meaningful to say, reply with exactly: no note
+
+coach_system_deep: |
+  You are an expert [type of coach].
+  [Instructions for a thorough, detailed deep-dive critique covering multiple dimensions.]

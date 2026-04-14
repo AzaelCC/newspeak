@@ -1,15 +1,19 @@
 """Benchmark: kokoro-onnx (CPU) vs mlx-audio (Apple GPU) for Kokoro TTS."""
 
 import platform
+import statistics
 import sys
 import time
-import statistics
+
 import numpy as np
 
 # Test sentences of varying length
 SENTENCES = {
     "short": "Hello, how are you doing today?",
-    "medium": "I can see you're sitting at your desk. It looks like you're working on something interesting. How can I help you today?",
+    "medium": (
+        "I can see you're sitting at your desk. It looks like you're working on "
+        "something interesting. How can I help you today?"
+    ),
     "long": (
         "That's a really great question! Let me think about this for a moment. "
         "The history of artificial intelligence goes back to the 1950s, when Alan Turing "
@@ -123,7 +127,9 @@ def benchmark_mlx_audio_streaming():
     for label, text in SENTENCES.items():
         # Warmup streaming
         for _ in range(WARMUP):
-            for r in model.generate(text=text, voice=VOICE, speed=SPEED, stream=True, streaming_interval=1.0):
+            for _r in model.generate(
+                text=text, voice=VOICE, speed=SPEED, stream=True, streaming_interval=1.0
+            ):
                 break
 
         ttfc_times = []
@@ -133,7 +139,9 @@ def benchmark_mlx_audio_streaming():
             t0 = time.time()
             first = True
             n_chunks = 0
-            for r in model.generate(text=text, voice=VOICE, speed=SPEED, stream=True, streaming_interval=1.0):
+            for _r in model.generate(
+                text=text, voice=VOICE, speed=SPEED, stream=True, streaming_interval=1.0
+            ):
                 if first:
                     ttfc_times.append(time.time() - t0)
                     first = False
@@ -158,8 +166,8 @@ def print_results(name, results):
     for label, r in results.items():
         text = SENTENCES[label]
         print(f"\n  [{label}] ({len(text)} chars)")
-        print(f"    Mean:   {r['mean']*1000:7.1f} ms  (+/-{r['stdev']*1000:.1f})")
-        print(f"    Min:    {r['min']*1000:7.1f} ms")
+        print(f"    Mean:   {r['mean'] * 1000:7.1f} ms  (+/-{r['stdev'] * 1000:.1f})")
+        print(f"    Min:    {r['min'] * 1000:7.1f} ms")
         print(f"    Audio:  {r['audio_sec']:7.2f} s")
         print(f"    RTF:    {r['rtf']:7.3f}x  (< 1.0 = faster than real-time)")
         print(f"    SR:     {r['sample_rate']} Hz")
@@ -167,14 +175,14 @@ def print_results(name, results):
 
 def print_streaming_results(results):
     print(f"\n{'=' * 60}")
-    print(f"  mlx-audio: Streaming Mode")
+    print("  mlx-audio: Streaming Mode")
     print(f"{'=' * 60}")
     for label, r in results.items():
         text = SENTENCES[label]
         print(f"\n  [{label}] ({len(text)} chars)")
-        print(f"    TTFC Mean:  {r['ttfc_mean']*1000:7.1f} ms")
-        print(f"    TTFC Min:   {r['ttfc_min']*1000:7.1f} ms")
-        print(f"    Total Mean: {r['total_mean']*1000:7.1f} ms")
+        print(f"    TTFC Mean:  {r['ttfc_mean'] * 1000:7.1f} ms")
+        print(f"    TTFC Min:   {r['ttfc_min'] * 1000:7.1f} ms")
+        print(f"    Total Mean: {r['total_mean'] * 1000:7.1f} ms")
         print(f"    Chunks:     {r['chunks']:.1f}")
 
 
@@ -201,10 +209,14 @@ if __name__ == "__main__":
 
         # Comparison
         print(f"\n{'=' * 60}")
-        print(f"  Comparison: speedup of mlx-audio over kokoro-onnx")
+        print("  Comparison: speedup of mlx-audio over kokoro-onnx")
         print(f"{'=' * 60}")
         for label in SENTENCES:
             onnx_mean = onnx_results[label]["mean"]
             mlx_mean = mlx_results[label]["mean"]
             speedup = onnx_mean / mlx_mean
-            print(f"  [{label}]  {onnx_mean*1000:.0f}ms -> {mlx_mean*1000:.0f}ms  ({speedup:.2f}x {'faster' if speedup > 1 else 'slower'})")
+            speed_label = "faster" if speedup > 1 else "slower"
+            print(
+                f"  [{label}]  {onnx_mean * 1000:.0f}ms -> "
+                f"{mlx_mean * 1000:.0f}ms  ({speedup:.2f}x {speed_label})"
+            )

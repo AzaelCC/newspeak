@@ -1,8 +1,8 @@
-# Parlor
+# Newspeak
 
 On-device, real-time multimodal AI. Have natural voice and vision conversations with an AI that runs entirely on your machine.
 
-Parlor uses [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it) for understanding speech and vision, and [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) for text-to-speech. You talk, show your camera, and it talks back, all locally.
+Newspeak uses [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it) for understanding speech and vision, and [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) for text-to-speech. You talk, show your camera, and it talks back, all locally.
 
 https://github.com/user-attachments/assets/cb0ffb2e-f84f-48e7-872c-c5f7b5c6d51f
 
@@ -49,15 +49,14 @@ Browser (playback + transcript)
 ## Quick start
 
 ```bash
-git clone https://github.com/fikrikarim/parlor.git
-cd parlor
+git clone https://github.com/fikrikarim/newspeak.git
+cd newspeak
 
 # Install uv if you don't have it
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-cd src
-uv sync
-uv run server.py
+uv sync --group dev
+uv run newspeak-server
 ```
 
 Open [http://localhost:8000](http://localhost:8000), grant camera and microphone access, and start talking.
@@ -67,7 +66,6 @@ Models are downloaded automatically on first run.
 To use the WhisperX pipeline:
 
 ```bash
-cd src
 uv sync --extra whisper
 ```
 
@@ -84,6 +82,7 @@ Nested keys use double-underscore as separator (`SECTION__KEY`). Environment var
 | `SERVER__PORT`              | `8000`                  | FastAPI server port                     |
 | `SERVER__LLAMA_SERVER_URL`  | `http://localhost:8080` | OpenAI-compatible llama-server URL      |
 | `SERVER__LLAMA_MODEL`       | `gemma-4-E2B-it`        | Model name or alias for chat calls      |
+| `SERVER__LOG_LEVEL`         | `INFO`                  | Python logging level                    |
 | `AUDIO__PIPELINE`           | `direct`                | `direct` or `whisperx`                  |
 | `WHISPERX__MODEL`           | `small`                 | WhisperX ASR model                      |
 | `WHISPERX__DEVICE`          | `auto`                  | `cpu`, `cuda`, `gpu`, or `auto`         |
@@ -108,17 +107,25 @@ Decode speed: ~83 tokens/sec on GPU (Apple M3 Pro).
 ## Project structure
 
 ```
+pyproject.toml             # Dependencies, scripts, Ruff, and dev tooling
 src/
-|-- server.py              # FastAPI WebSocket server + audio pipeline routing
-|-- tts.py                 # Platform-aware TTS (MLX on Mac, ONNX on Linux)
-|-- index.html             # Frontend UI (VAD, camera, audio playback)
-|-- pyproject.toml         # Dependencies
-`-- benchmarks/
-    |-- bench.py           # End-to-end WebSocket benchmark
-    `-- benchmark_tts.py   # TTS backend comparison
+|-- server.py              # Compatibility entry point
+|-- tts.py                 # Compatibility TTS wrapper
+`-- newspeak/
+    |-- app.py             # FastAPI app factory
+    |-- config.py          # Pydantic settings
+    |-- api/               # HTTP and WebSocket routes
+    |-- adapters/          # OpenAI-compatible LLM, WhisperX, and TTS backends
+    |-- services/          # Conversation, prompts, audio, and TTS streaming
+    `-- web/static/        # Browser HTML, CSS, and JS
+benchmarks/
+|-- bench.py               # End-to-end WebSocket benchmark
+`-- benchmark_tts.py       # TTS backend comparison
+tests/                     # Unit tests for core behavior
 ```
 
 `.env.example` documents all available settings. Local `.env` is ignored by git.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the layered design, patterns used, and anti-patterns fixed in the refactor.
 
 ## Acknowledgments
 

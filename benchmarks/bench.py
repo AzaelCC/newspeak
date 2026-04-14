@@ -1,6 +1,6 @@
-"""End-to-end benchmark — connects to the running server over WebSocket.
+"""End-to-end benchmark for a running Newspeak server.
 
-Start the server first:  uv run python server.py
+Start the server first:  uv run newspeak-server
 Then run:                uv run python benchmarks/bench.py
 
 Measures real latencies including network, serialization, and all server overhead.
@@ -16,11 +16,7 @@ import wave
 import numpy as np
 import websockets
 
-
 SERVER_URL = os.environ.get("SERVER_URL", "ws://localhost:8000/ws")
-
-
-# ── Test fixtures ──────────────────────────────────────────────────────────
 
 
 def make_wav_b64(duration_s: float, sample_rate: int = 16000) -> str:
@@ -28,6 +24,7 @@ def make_wav_b64(duration_s: float, sample_rate: int = 16000) -> str:
     samples = np.sin(2 * np.pi * 440 * np.arange(int(sample_rate * duration_s)) / sample_rate)
     pcm = (samples * 32767).clip(-32768, 32767).astype(np.int16)
     import io
+
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
@@ -40,15 +37,13 @@ def make_wav_b64(duration_s: float, sample_rate: int = 16000) -> str:
 def make_jpg_b64(width: int = 320, height: int = 240) -> str:
     """Create a JPEG image as base64 string."""
     import io
+
     from PIL import Image
 
     img = Image.new("RGB", (width, height), color=(100, 150, 200))
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return base64.b64encode(buf.getvalue()).decode()
-
-
-# ── WebSocket client ───────────────────────────────────────────────────────
 
 
 async def send_and_receive(ws, payload: dict) -> dict:
@@ -82,18 +77,11 @@ async def send_and_receive(ws, payload: dict) -> dict:
         "audio_pipeline": text_msg.get("audio_pipeline") if text_msg else None,
         "asr_time": text_msg.get("asr_time") if text_msg else None,
         "llm_time": text_msg.get("llm_time", 0) if text_msg else 0,
-        "ttft": text_msg.get("ttft"),
-        "decode_tokens": text_msg.get("decode_tokens"),
-        "decode_time": text_msg.get("decode_time"),
-        "tok_per_sec": text_msg.get("tok_per_sec"),
         "tts_time": tts_time,
         "total_time": round(total_time, 2),
         "text_recv_time": round(text_msg["_recv_time"], 2) if text_msg else 0,
         "audio_kb": round(audio_bytes * 3 / 4 / 1024, 1),  # base64 -> bytes -> KB
     }
-
-
-# ── Print helpers ──────────────────────────────────────────────────────────
 
 
 def print_header():
@@ -103,16 +91,10 @@ def print_header():
 
 def print_row(name: str, r: dict):
     resp = r["text"][:50] + "..." if len(r["text"]) > 50 else r["text"]
-    extra = ""
-    if r.get("ttft") is not None:
-        extra = f" (prefill {r['ttft']}s · {r['decode_tokens']}tok · {r['tok_per_sec']}tok/s)"
     print(
         f"{name:<22} {r['llm_time']:>5.2f}s {r['tts_time'] or 0:>5.2f}s "
-        f"{r['total_time']:>5.2f}s  {resp}{extra}"
+        f"{r['total_time']:>5.2f}s  {resp}"
     )
-
-
-# ── Test suites ────────────────────────────────────────────────────────────
 
 
 async def main():
@@ -120,8 +102,6 @@ async def main():
     audio_2s = make_wav_b64(2.0)
     audio_5s = make_wav_b64(5.0)
     image = make_jpg_b64()
-
-    # ── Individual turns (new connection each = fresh conversation) ─────
 
     print("=" * 80)
     print("BENCHMARK: Individual turns (fresh connection each)")
@@ -142,8 +122,6 @@ async def main():
             r = await send_and_receive(ws, payload)
             print_row(name, r)
 
-    # ── Multi-turn conversation (same connection) ──────────────────────
-
     print()
     print("=" * 80)
     print("BENCHMARK: Multi-turn conversation (same connection)")
@@ -163,8 +141,6 @@ async def main():
             r = await send_and_receive(ws, payload)
             print_row(name, r)
 
-    # ── Correctness checks ─────────────────────────────────────────────
-
     print()
     print("=" * 80)
     print("CORRECTNESS")
@@ -175,7 +151,7 @@ async def main():
         r = await send_and_receive(ws, {"text": "Hello, nice to meet you!"})
         print(f"  Text response:      {'PASS' if r['text'] and len(r['text']) > 0 else 'FAIL'}")
         print(f"  Text no ASR:        {'PASS' if not r['transcription'] else 'FAIL'}")
-        print(f"  No raw delimiters:  {'PASS' if '<|\"|>' not in r['text'] else 'FAIL'}")
+        print(f"  No raw delimiters:  {'PASS' if '<|"|>' not in r['text'] else 'FAIL'}")
 
         # Image description works
         r = await send_and_receive(ws, {"image": image})
